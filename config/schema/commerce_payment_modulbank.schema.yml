@@ -1,0 +1,45 @@
+commerce_payment.commerce_payment_gateway.plugin.modulbank_offsite_redirect:
+  type: commerce_payment_gateway_configuration
+  mapping:
+    merchant:
+      type: string
+      label: 'Merchant'
+    secret_key:
+      type: string
+      label: 'Secret key'
+    test_secret_key:
+      type: string
+      label: 'Test secret key'
+    sno:
+      type: string
+      label: 'Test secret key'
+    product_vat:
+      type: string
+      label: 'Product VAT'
+    delivery_vat:
+      type: string
+      label: 'Delivery VAT'
+    payment_method:
+      type: string
+      label: 'Payment method'
+    payment_object:
+      type: string
+      label: 'Payment object'
+    delivery_payment_object:
+      type: string
+      label: 'Delivery payment object'
+    success_url:
+      type: uri
+      label: 'Success url'
+    fail_url:
+      type: uri
+      label: 'Fail url'
+    cancel_url:
+      type: uri
+      label: 'Cancel url'
+    logging:
+      type: boolean
+      label: 'Logging'
+    max_log_size:
+      type: integer
+      label: 'Max log size (mb)'
