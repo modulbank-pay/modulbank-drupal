@@ -43,3 +43,6 @@ commerce_payment.commerce_payment_gateway.plugin.modulbank_offsite_redirect:
     max_log_size:
       type: integer
       label: 'Max log size (mb)'
+    preauth:
+      type: integer
+      label: 'Preauth'

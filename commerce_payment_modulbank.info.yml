@@ -3,6 +3,6 @@ type: module
 description: 'Modulbank payment gateway.'
 package: Commerce
 core: 8.x
-varsion: '1.0.0'
+varsion: '1.1.0'
 dependencies:
   - commerce:commerce_payment

@@ -3,16 +3,20 @@
 namespace Drupal\commerce_payment_modulbank\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_order\Entity\OrderInterface;
-use Drupal\commerce_order\Entity\OrderItemInterface;
-use Drupal\commerce_order\OrderStorage;
-use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
-use Drupal\Core\Form\FormStateInterface;
+use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
-use Symfony\Component\HttpFoundation\Request;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\HasPaymentInstructionsInterface;
+use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
+use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsAuthorizationsInterface;
+use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsRefundsInterface;
+use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsVoidsInterface;
+use Drupal\commerce_price\Price;
+use Drupal\Core\Form\FormStateInterface;
+use Symfony\Component\HttpFoundation\Request;
 
-if(!class_exists("ModulbankHelper")) {
-	include_once(__DIR__.'/../../../PluginForm/OffsiteRedirect/modulbanklib/ModulbankHelper.php');
+if (!class_exists("ModulbankHelper")) {
+	include_once __DIR__ . '/../../../PluginForm/OffsiteRedirect/modulbanklib/ModulbankHelper.php';
+	include_once __DIR__ . '/../../../PluginForm/OffsiteRedirect/modulbanklib/ModulbankReceipt.php';
 }
 
 /**
@@ -31,7 +35,7 @@ if(!class_exists("ModulbankHelper")) {
  *   },
  * )
  */
-class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentInstructionsInterface
+class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentInstructionsInterface, SupportsAuthorizationsInterface, SupportsRefundsInterface
 {
 
 	/**
@@ -53,6 +57,7 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			'payment_object'          => 'commodity',
 			'delivery_payment_object' => 'service',
 			'logging'                 => false,
+			'preauth'                 => 0,
 			'max_log_size'            => 10,
 		] + parent::defaultConfiguration();
 	}
@@ -168,36 +173,19 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			'#options'       => $po_items,
 			'#default_value' => $this->configuration['delivery_payment_object'],
 		);
-/*
-		$form['success_url'] = [
-			'#type'          => 'textfield',
-			'#title'         => $this->t('Success url'),
-			'#default_value' => $this->configuration['success_url'],
-		];
 
-		$form['fail_url'] = [
-			'#type'          => 'textfield',
-			'#title'         => $this->t('Fail url'),
-			'#default_value' => $this->configuration['fail_url'],
-		];
-
-		$form['cancel_url'] = [
-			'#type'          => 'textfield',
-			'#title'         => $this->t('Cancel url'),
-			'#default_value' => $this->configuration['cancel_url'],
-		];*/
+		$form['preauth'] = array(
+			'#type'          => 'select',
+			'#title'         => "Предавторизация",
+			'#options'       => [0 => 'Нет', 1 => 'Да'],
+			'#default_value' => $this->configuration['preauth'],
+		);
 
 		$form['logging'] = [
 			'#type'          => 'checkbox',
 			'#title'         => $this->t('Logging'),
 			'#default_value' => $this->configuration['logging'],
 		];
-/*
-		$form['max_log_size'] = [
-			'#type'          => 'textfield',
-			'#title'         => $this->t('Max log size(mb)'),
-			'#default_value' => $this->configuration['max_log_size'],
-		];*/
 
 		return $form;
 	}
@@ -218,8 +206,28 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			$this->configuration['cancel_url']      = $values['cancel_url'];
 			$this->configuration['logging']         = $values['logging'];
 			$this->configuration['max_log_size']    = $values['max_log_size'];
+			$this->configuration['preauth']         = $values['preauth'];
 		}
 	}
+/*
+public function buildPaymentOperations(\Drupal\commerce_payment\Entity\PaymentInterface $payment) {
+$payment_state = $payment->getState()->value;
+$operations = [];
+$operations['capture'] = [
+'title' => 'Подтверить',
+'page_title' => 'Подтвердить оплату',
+'plugin_form' => 'receive-payment',
+'access' => $payment_state == 'authorized',
+];
+$operations['refund'] = [
+'title' => 'Возврат',
+'page_title' => 'Возврат оплаты',
+'plugin_form' => 'refund-payment',
+'access' => in_array($payment_state, ['completed', 'authorized']),
+];
+
+return $operations;
+}*/
 
 	/**
 	 * 	 * URL: http://site.domain/payment/notify/commerce_payment_modulbank
@@ -243,12 +251,16 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			if (!$this->checkSign($request)) {
 				throw new \Exception('Sign error');
 			}
-			if ($request->request->get('state') === 'COMPLETE') {
-				$order->set('state','completed');
+			if (
+				($request->request->get('state') === 'COMPLETE' && !$this->configuration['preauth'])
+				|| $request->request->get('state') === 'AUTHORIZED'
+			) {
+				$order->set('state', 'completed');
 				$order->save();
+				$state           = $request->request->get('state') === 'AUTHORIZED' ? 'authorization' : 'completed';
 				$payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
 				$payment         = $payment_storage->create([
-					'state'           => 'completed',
+					'state'           => $state,
 					'amount'          => $order->getTotalPrice(),
 					'payment_gateway' => $this->entityId,
 					'order_id'        => $order->id(),
@@ -266,8 +278,74 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 		}
 	}
 
+	public function capturePayment(PaymentInterface $payment, Price $amount = null)
+	{
+		$this->assertPaymentState($payment, ['authorization']);
+		// If not specified, capture the entire amount.
+		$amount      = $amount ?: $payment->getAmount();
+		$order       = $payment->getOrder();
+		$receiptJson = $this->getReceipt($payment);
+		$data        = [
+			'merchant'        => $this->configuration['merchant'],
+			'amount'          => $amount->getNumber(),
+			'transaction'     => $payment->getRemoteId(),
+			'receipt_contact' => $order->getCustomer()->getEmail(),
+			'receipt_items'   => $receiptJson,
+			'unix_timestamp'  => time(),
+			'salt'            => \ModulbankHelper::getSalt(),
+		];
+		$this->log($data, 'notice');
+		$key      = $this->getKey();
+		$response = \ModulbankHelper::capture($data, $key);
+		$this->log($response, 'notice');
+		$response = json_decode($response);
+		if ($response->status !== 'ok') {
+			throw new PaymentGatewayException($response->message, 1);
+		}
+
+		$payment->setState('completed');
+		$payment->setAmount($amount);
+		$payment->save();
+	}
+
+	public function voidPayment(PaymentInterface $payment)
+	{
+		$this->refundPayment($payment);
+	}
+
+	public function refundPayment(PaymentInterface $payment, Price $amount = null)
+	{
+		$this->assertPaymentState($payment, ['completed', 'authorization']);
+		// If not specified, refund the entire amount.
+		$amount = $amount ?: $payment->getAmount();
+		$this->assertRefundAmount($payment, $amount);
+
+		// Check if the Refund is partial or full.
+		$old_refunded_amount = $payment->getRefundedAmount();
+		$new_refunded_amount = $old_refunded_amount->add($amount);
+		if ($new_refunded_amount->lessThan($payment->getAmount())) {
+			$payment->setState('partially_refunded');
+		} else {
+			$payment->setState('refunded');
+		}
+		$this->log(array(
+			'merchant'       => $this->configuration['merchant'],
+			'amount'         => $amount->getNumber(),
+			'transaction_id' => $payment->getRemoteId(),
+		), 'info');
+		$key      = $this->getKey();
+		$response = \ModulbankHelper::refund($this->configuration['merchant'], $amount, $payment->getRemoteId(), $key);
+		$this->log($response, 'info');
+		$response = json_decode($response);
+		if ($response->status !== 'ok') {
+			throw new PaymentGatewayException($response->message, 1);
+		}
+
+		$payment->setRefundedAmount($new_refunded_amount);
+		$payment->save();
+	}
+
 	/**
-	 * Page for MNT_SUCCESS_URL
 	 *
 	 * {@inheritdoc}
 	 *
@@ -279,8 +357,9 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 		$_SESSION['modulbank_transaction_id'] = $request->get('transaction_id');
 	}
 
-	public function log($message, $type = 'error'){
-		if($this->configuration['logging']) {
+	public function log($message, $type = 'error')
+	{
+		if ($this->configuration['logging']) {
 			$message = var_export($message, true);
 			if ($type == 'error') {
 				\Drupal::logger('commerce_payment_modulbank')->error($message);
@@ -290,15 +369,47 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 		}
 	}
 
-	private function checkSign(Request $request) {
-		$key       = $this->configuration['mode'] == 'test' ? $this->configuration['test_secret_key'] : $this->configuration['secret_key'];
+	public function getReceipt(\Drupal\commerce_payment\Entity\PaymentInterface $payment)
+	{
+		$order       = $payment->getOrder();
+		$amount      = $payment->getAmount()->getNumber();
+		$receipt     = new \ModulbankReceipt($this->configuration['sno'], $this->configuration['payment_method'], $amount);
+		$items       = $order->getItems();
+		$adjustments = $order->getAdjustments();
+		foreach ($items as $item) {
+			$receipt->addItem(
+				$item->getTitle(),
+				$item->getUnitPrice()->getNumber(),
+				$this->configuration['product_vat'],
+				$this->configuration['payment_object'],
+				$item->getQuantity()
+			);
+		}
+
+		foreach ($adjustments as $adjustment) {
+			if ($adjustment->getType() == 'shipping') {
+				$receipt->addItem(
+					$adjustment->getLabel(),
+					$adjustment->getAmount()->getNumber(),
+					$this->configuration['delivery_vat'],
+					$this->configuration['delivery_payment_object']
+				);
+			}
+		}
+		return $receipt->getJson();
+	}
+
+	private function checkSign(Request $request)
+	{
+		$key       = $this->getKey();
 		$signature = \ModulbankHelper::calcSignature($key, $_POST);
 		return strcasecmp($signature, $request->get('signature')) === 0;
 	}
 
-	public function buildPaymentInstructions(\Drupal\commerce_payment\Entity\PaymentInterface $payment) {
+	public function buildPaymentInstructions(\Drupal\commerce_payment\Entity\PaymentInterface $payment)
+	{
 		$html = '';
-		if($_SESSION['modulbank_transaction_id']){
+		if ($_SESSION['modulbank_transaction_id']) {
 			$transactionResult = $this->getTransactionStatus($_SESSION['modulbank_transaction_id']);
 			$paymentStatusText = "Ожидаем поступления средств";
 			if (isset($transactionResult->status) && $transactionResult->status == "ok") {
@@ -312,12 +423,24 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 						break;
 					case 'COMPLETE':$paymentStatusText = "Оплата прошла успешно";
 						break;
+					case 'AUTHORIZED':$paymentStatusText = "Оплата прошла успешно";
+						break;
 					default:$paymentStatusText = "Ожидаем поступления средств";
 				}
 			}
-			$html .= "Статус оплаты: ".$paymentStatusText;
+			$html .= "Статус оплаты: " . $paymentStatusText;
 		}
 		return $html;
+	}
+
+	public function getKey()
+	{
+		if ($this->configuration['mode'] === 'test') {
+			$key = $this->configuration['test_secret_key'];
+		} else {
+			$key = $this->configuration['secret_key'];
+		}
+		return $key;
 	}
 
 	private function getTransactionStatus($transaction)
@@ -325,7 +448,7 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 		$merchant = $this->configuration['merchant'];
 		$this->log([$merchant, $transaction]);
 
-		$key = $this->configuration['mode'] == 'test' ? $this->configuration['test_secret_key'] : $this->configuration['secret_key'];
+		$key = $this->getKey();
 
 		$result = \ModulbankHelper::getTransactionStatus(
 			$merchant,
@@ -334,5 +457,37 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 		);
 		$this->log($result, 'info');
 		return json_decode($result);
+	}
+
+	public function buildPaymentOperations(PaymentInterface $payment)
+	{
+		$payment_state = $payment->getState()->value;
+		$operations    = [];
+		if ($this instanceof SupportsAuthorizationsInterface) {
+			$operations['capture'] = [
+				'title'       => $this->t('Подтвердить'),
+				'page_title'  => $this->t('Подтверждение платежа'),
+				'plugin_form' => 'capture-payment',
+				'access'      => $payment_state == 'authorization',
+			];
+		}
+		if ($this instanceof SupportsVoidsInterface) {
+			$operations['void'] = [
+				'title'       => $this->t('Отменить'),
+				'page_title'  => $this->t('Отмена платежа'),
+				'plugin_form' => 'void-payment',
+				'access'      => $payment_state == 'authorization',
+			];
+		}
+		if ($this instanceof SupportsRefundsInterface) {
+			$operations['refund'] = [
+				'title'       => $this->t('Возврат'),
+				'page_title'  => $this->t('Возврат платежа'),
+				'plugin_form' => 'refund-payment',
+				'access'      => in_array($payment_state, ['completed', 'partially_refunded']),
+			];
+		}
+
+		return $operations;
 	}
 }

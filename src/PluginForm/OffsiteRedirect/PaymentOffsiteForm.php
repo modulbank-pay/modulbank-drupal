@@ -42,29 +42,6 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm
 			'cms'      => 'Drupal '.\Drupal::VERSION,
 		];
 
-		$receipt  = new \ModulbankReceipt($configuration['sno'], $configuration['payment_method'], $amount);
-		$items = $order->getItems();
-		$adjustments = $order->getAdjustments();
-		foreach ($items as $item) {
-			$receipt->addItem(
-				$item->getTitle(),
-				$item->getUnitPrice()->getNumber(),
-				$configuration['product_vat'],
-				$configuration['payment_object'],
-				$item->getQuantity()
-			);
-		}
-
-		foreach($adjustments as $adjustment) {
-			if ($adjustment->getType() == 'shipping') {
-				$receipt->addItem(
-					$adjustment->getLabel(),
-					$adjustment->getAmount()->getNumber(),
-					$configuration['delivery_vat'],
-					$configuration['delivery_payment_object']
-				);
-			}
-		}
 		$address = $order->getBillingProfile()->address->first();
 		$name = $address->getGivenName() . ' ' . $address->getFamilyName();
 
@@ -73,6 +50,7 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm
 			'amount'          => $amount,
 			'order_id'        => $transaction_id,
 			'testing'         => $configuration['mode'] === 'test' ? 1 : 0,
+			'preauth'         => $configuration['preauth'],
 			'description'     => "Оплата заказа №" . $transaction_id,
 			'success_url'     => $form['#return_url'],
 			'fail_url'        => $form['#return_url'],
@@ -81,12 +59,12 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm
 			'client_name'     => $name,
 			'client_email'    => $order->getCustomer()->getEmail(),
 			'receipt_contact' => $order->getCustomer()->getEmail(),
-			'receipt_items'   => $receipt->getJson(),
+			'receipt_items'   => $payment_gateway_plugin->getReceipt($payment),
 			'unix_timestamp'  => time(),
 			'sysinfo'         => json_encode($sysinfo),
 			'salt'            => \ModulbankHelper::getSalt(),
 		];
-		$key = $configuration['mode'] === 'test'?$configuration['test_secret_key']:$configuration['secret_key'];
+		$key = $payment_gateway_plugin->getKey();
 		$data['signature'] = \ModulbankHelper::calcSignature($key, $data);
 		$payment_gateway_plugin->log($data, 'info');
 		$form = $this->buildRedirectForm($form, $form_state, $redirect_url, $data, 'post');
