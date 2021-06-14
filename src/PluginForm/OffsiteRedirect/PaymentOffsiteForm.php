@@ -64,6 +64,15 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm
 			'sysinfo'         => json_encode($sysinfo),
 			'salt'            => \ModulbankHelper::getSalt(),
 		];
+
+		if ($configuration['show_custom_pm']) {
+			$methods = ['card', 'sbp', 'applepay', 'googlepay'];
+			$methods = array_filter($methods, function ($method) use ($configuration) {
+				return $configuration[$method];
+			});
+			$data['show_payment_methods'] = json_encode(array_values($methods));
+		}
+
 		$key = $payment_gateway_plugin->getKey();
 		$data['signature'] = \ModulbankHelper::calcSignature($key, $data);
 		$payment_gateway_plugin->log($data, 'info');

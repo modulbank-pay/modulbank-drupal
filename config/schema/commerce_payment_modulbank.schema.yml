@@ -46,3 +46,6 @@ commerce_payment.commerce_payment_gateway.plugin.modulbank_offsite_redirect:
     preauth:
       type: integer
       label: 'Preauth'
+    show_custom_pm:
+      type: integer
+      label: 'Show custom payment methods'

@@ -59,6 +59,11 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			'logging'                 => false,
 			'preauth'                 => 0,
 			'max_log_size'            => 10,
+			'show_custom_pm'          => 0,
+			'card'                    => 0,
+			'sbp'                     => 0,
+			'googlepay'               => 0,
+			'applepay'                => 0,
 		] + parent::defaultConfiguration();
 	}
 
@@ -187,6 +192,39 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			'#default_value' => $this->configuration['logging'],
 		];
 
+		$form['show_custom_pm'] = array(
+			'#type'          => 'checkbox',
+			'#title'         => "Отображать определённые способы оплаты",
+			'#default_value' => $this->configuration['show_custom_pm'],
+		);
+		$form['modulbank_custom_wrapper_begin'] = array(
+			'#markup' => '<p>Для отображения отдельных методов оплаты установите галочку и выберите интересующие из списка</p>',
+		);
+
+		$form['card'] = array(
+			'#type'          => 'checkbox',
+			'#title'         => "По карте",
+			'#default_value' => $this->configuration['card'],
+		);
+
+		$form['sbp'] = array(
+			'#type'          => 'checkbox',
+			'#title'         => "Система быстрых платежей",
+			'#default_value' => $this->configuration['sbp'],
+		);
+
+		$form['googlepay'] = array(
+			'#type'          => 'checkbox',
+			'#title'         => "GooglePay",
+			'#default_value' => $this->configuration['googlepay'],
+		);
+
+		$form['applepay'] = array(
+			'#type'          => 'checkbox',
+			'#title'         => "ApplePay",
+			'#default_value' => $this->configuration['applepay'],
+		);
+
 		return $form;
 	}
 
@@ -207,6 +245,11 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase implements HasPaymentIns
 			$this->configuration['logging']         = $values['logging'];
 			$this->configuration['max_log_size']    = $values['max_log_size'];
 			$this->configuration['preauth']         = $values['preauth'];
+			$this->configuration['show_custom_pm']  = $values['show_custom_pm'];
+			$this->configuration['card']            = $values['card'];
+			$this->configuration['sbp']             = $values['sbp'];
+			$this->configuration['googlepay']       = $values['googlepay'];
+			$this->configuration['applepay']        = $values['applepay'];
 		}
 	}
 /*
